@@ -1,11 +1,13 @@
 # Importar la clase
-from src.generar_planillas_base import TemplateGenerator  
+from src.planillas_en_blanco import TemplateGenerator  
 from src.actualizar_json import ActualizarJson
-from src.generador import GeneradorPlantillas
+from src.planillas_diligenciadas import GeneradorPlantillas
+from src.certificador import GeneradorCertificaciones
 
 # Importar librerías
 from PIL import ImageTk, Image, ImageDraw
 from tkinter import messagebox
+from PIL import Image, ImageTk  # Asegúrate de tener instalada la librería Pillow
 import customtkinter as ctk
 from tkinter import font
 import tkinter as tk 
@@ -37,7 +39,7 @@ class FormularioMaestroDesign(tk.Tk):
         logo_perfil = os.path.join(os.getcwd(), "util/img/logo_perfil.png")
         sitio_construccion = os.path.join(os.getcwd(), "util/img/sitio_construccion.png")
         # Cargar imagenes
-        # self.logo = leer_imagen(logo_ventas, (560, 136))
+        self.logo = leer_imagen(logo_ventas, (1060, 300))
         self.perfil = leer_imagen(logo_perfil, (100, 100))
         self.img_sitio_construccion = leer_imagen(sitio_construccion, (200, 200))
         self.config_window()
@@ -112,7 +114,7 @@ class FormularioMaestroDesign(tk.Tk):
     
     def controles_cuerpo(self):
         # Imagen en el cuerpo principal
-        label = tk.Label(self.cuerpo_principal, #image=self.logo,
+        label = tk.Label(self.cuerpo_principal, image=self.logo,
                             bg=COLOR_CUERPO_PRINCIPAL)
         label.place(x=0, y=0, relwidth=1, relheight=1)
 
@@ -437,6 +439,15 @@ class FormularioProcesoFaca():
         except Exception as e:
             self.text_widget.after(0, self.text_widget.insert, tk.END, f" Error durante la ejecución\n{e}\n\n")
 
+    def ejecutar_generador_certificaciones(self):
+        try:
+            # Instanciar la clase TemplateGenerator y ejecutar el método main
+            salida_proceso = GeneradorCertificaciones().main()
+            # Insertar el resultado en el text_widget
+            self.text_widget.after(0, self.text_widget.insert, tk.END, f"{salida_proceso}\n\n")
+        except Exception as e:
+            self.text_widget.after(0, self.text_widget.insert, tk.END, f" Error durante la ejecución\n{e}\n\n")
+
     def ejecutar_generador_plantillas_pdf(self):
         try:
             # Instanciar la clase TemplateGenerator y ejecutar el método main
@@ -448,82 +459,82 @@ class FormularioProcesoFaca():
 
     def __init__(self, panel_principal):    
 
-        self.panel_principal = panel_principal  # Almacenar panel_principal en un atributo
+        self.panel_principal = panel_principal
 
-        # Crear paneles: barra superior
-        self.barra_superior = tk.Frame(panel_principal)
-        self.barra_superior.pack(side=tk.TOP, fill=tk.X, expand=False) 
+        # Crear barra superior
+        self.barra_superior = tk.Frame(panel_principal, bg=COLOR_CUERPO_PRINCIPAL)
+        self.barra_superior.pack(side=tk.TOP, fill=tk.X)
 
-        # Asegúrate de configurar el color de fondo en barra_superior
-        self.barra_superior.config(bg=COLOR_CUERPO_PRINCIPAL)
-
-        # Crear paneles: barra inferior
-        self.barra_inferior = tk.Frame(panel_principal)
-        self.barra_inferior.pack(side=tk.BOTTOM, fill='both', expand=True)  
-
-        # Asegúrate de configurar el color de fondo en barra_superior
-        self.barra_inferior.config(bg=COLOR_CUERPO_PRINCIPAL)
-
-        # Primer Label con texto
+        # Títulos
         self.labelTitulo = tk.Label(
-            self.barra_superior, text="BIENVENIDO")
-        self.labelTitulo.config(fg="#222d33", font=("Roboto", 30), bg=COLOR_CUERPO_PRINCIPAL)
+            self.barra_superior, text="BIENVENIDO", fg="#222d33",
+            font=("Roboto", 30), bg=COLOR_CUERPO_PRINCIPAL)
         self.labelTitulo.pack(side=tk.TOP, fill='both', expand=True)
 
-        # Segundo Label con texto
         self.labelsubTitulo = tk.Label(
-            self.barra_superior, text="GESTIÓN DE PLANILLAS FACA")
-        self.labelsubTitulo.config(fg="#222d33", font=("Roboto", 30), bg=COLOR_CUERPO_PRINCIPAL)
-        self.labelsubTitulo.pack(side=tk.TOP, fill='both', expand=True)
+            self.barra_superior, text="GESTIÓN DE PLANILLAS FACA", fg="#222d33",
+            font=("Roboto", 30), bg=COLOR_CUERPO_PRINCIPAL)
+        self.labelsubTitulo.pack(side=tk.TOP, fill='both', expand=True, pady=(0, 20))
 
-        # Añadir espacio en la parte inferior usando pady
-        self.labelsubTitulo.pack(side=tk.TOP, fill='both', expand=True, pady=(0, 20))  
-        # 0 para la parte superior, 20 para la inferior
+        # Contenedor principal (izquierda y derecha)
+        self.barra_inferior = tk.Frame(panel_principal, bg=COLOR_CUERPO_PRINCIPAL)
+        self.barra_inferior.pack(side=tk.TOP, fill='both', expand=True)
 
-        # Crear subpanel para los botones
-        self.subpanel_botones = tk.Frame(self.barra_inferior, bg= COLOR_CUERPO_PRINCIPAL) # bg="#222d33"
+        # Subpanel IZQUIERDO (botones + imagen)
+        self.panel_izquierdo = tk.Frame(self.barra_inferior, bg=COLOR_CUERPO_PRINCIPAL)
+        self.panel_izquierdo.pack(side=tk.LEFT, fill='both', expand=True, padx=10, pady=10)
+
+        # Subpanel de botones
+        self.subpanel_botones = tk.Frame(self.panel_izquierdo, bg=COLOR_CUERPO_PRINCIPAL)
         self.subpanel_botones.pack(side=tk.TOP, fill='x')
 
-        # Crear botones
+        # Crear botones con tamaños individuales y estilos personalizados
         self.button1 = ctk.CTkButton(
             self.subpanel_botones, text="Generar planillas en blanco", command=self.action1,
-            width=150, height=40, fg_color="#2a3138", text_color="white",
+            width=235, height=40, fg_color="#2a3138", text_color="white",
             corner_radius=20, font=("Arial", 14))
+        self.button1.pack(padx=20, pady=(10, 5))
 
         self.button2 = ctk.CTkButton(
             self.subpanel_botones, text="Generar planillas diligenciadas", command=self.action2,
-            width=150, height=40, fg_color="#2a3138", text_color="white",
+            width=235, height=40, fg_color="#2a3138", text_color="white",
             corner_radius=20, font=("Arial", 14))
+        self.button2.pack(padx=20, pady=5)
 
         self.button3 = ctk.CTkButton(
-            self.subpanel_botones, text="Convertir a pdf", command=self.action3,
-            width=150, height=40, fg_color="#2a3138", text_color="white",
+            self.subpanel_botones, text="Certificador", command=self.action3,
+            width=235, height=40, fg_color="#2a3138", text_color="white",
             corner_radius=20, font=("Arial", 14))
+        self.button3.pack(padx=20, pady=5)
 
-        # Ubicar los botones en la cuadrícula
-        self.button1.grid(row=0, column=0, padx=20, pady=10, sticky='ew')
-        self.button2.grid(row=0, column=1, padx=20, pady=10, sticky='ew')
-        self.button3.grid(row=0, column=2, padx=20, pady=10, sticky='ew')
+        self.button4 = ctk.CTkButton(
+            self.subpanel_botones, text="Convertir a pdf", command=self.action4,
+            width=235, height=40, fg_color="#2a3138", text_color="white",
+            corner_radius=20, font=("Arial", 14))
+        self.button4.pack(padx=20, pady=(5, 10))
 
-        # Configurar las columnas para que se expandan uniformemente
-        self.subpanel_botones.grid_columnconfigure(0, weight=1)
-        self.subpanel_botones.grid_columnconfigure(1, weight=1)
-        self.subpanel_botones.grid_columnconfigure(2, weight=1)
+        dibujo_programador = os.path.join(os.getcwd(), "util/img/Imagen perfil.png")
 
-        # Crear subpanel para el widget de texto y colocarlo en la parte inferior
+        # Imagen debajo de los botones (redimensionada)
+        try:
+            imagen = Image.open(dibujo_programador)
+            imagen = imagen.resize((200, 150), Image.Resampling.LANCZOS)
+            imagen_tk = ImageTk.PhotoImage(imagen)
+
+            self.imagen_label = tk.Label(self.panel_izquierdo, image=imagen_tk, bg=COLOR_CUERPO_PRINCIPAL)
+            self.imagen_label.image = imagen_tk
+            self.imagen_label.pack(side=tk.TOP, pady=20)
+        except Exception as e:
+            print(f"No se pudo cargar la imagen: {e}")
+
+        # Subpanel DERECHO (Text Widget)
         self.subpanel_texto = tk.Frame(self.barra_inferior, bg=COLOR_CUERPO_PRINCIPAL)
-        self.subpanel_texto.pack(side=tk.BOTTOM, fill='both', expand=True)
+        self.subpanel_texto.pack(side=tk.LEFT, fill='both', expand=True, padx=(0, 10))  # eliminamos pady
 
-        # Crear widget Text para mostrar mensajes
         self.text_widget = tk.Text(self.subpanel_texto, width=40, height=22)
-        # Espacio: 20 arriba, 10 abajo, 20 izquierda/derecha
-        self.text_widget.pack(padx=20, pady=(20, 20), fill='both', expand=True) 
+        self.text_widget.pack(fill='both', expand=True, padx=20, pady=(10, 20))  # solo pequeño espacio superior
 
-        # Configurar el tamaño de las columnas
-        self.barra_inferior.grid_columnconfigure(0, weight=1)
-        self.barra_inferior.grid_columnconfigure(1, weight=3)
-
-        # Crear paneles: barra inferior
+        # Panel final inferior (si lo usas)
         self.barra_final = tk.Frame(panel_principal, bg=COLOR_CUERPO_PRINCIPAL)
         self.barra_final.pack(side=tk.BOTTOM, fill='both', expand=True)
 
@@ -543,7 +554,7 @@ class FormularioProcesoFaca():
                 ActualizarJson().ejecutar("municipio_proceso", "FACA") 
 
                 # Insertar el resultado en el text_widget
-                self.text_widget.insert(tk.END, "Inicio generacion de planillas vacias para el municipio de FACA\n .....\n")
+                self.text_widget.insert(tk.END, " Inicio generacion de planillas\n en blanco para el municipio de FACA\n .....\n")
                 self.text_widget.update_idletasks() 
 
                 # Ejecutar la función en un hilo separado
@@ -575,7 +586,7 @@ class FormularioProcesoFaca():
                 ActualizarJson().ejecutar("municipio_proceso", "FACA") 
 
                 # Insertar el resultado en el text_widget
-                self.text_widget.insert(tk.END, "Inicio generacion de planillas diligenciadas y certificaciones para el municipio de FACA\n .....\n")
+                self.text_widget.insert(tk.END, " Inicio generacion de planillas\n diligenciadas para el municipio de FACA\n .....\n")
                 self.text_widget.update_idletasks() 
 
                 # Ejecutar la función en un hilo separado
@@ -607,7 +618,40 @@ class FormularioProcesoFaca():
                 ActualizarJson().ejecutar("municipio_proceso", "FACA") 
 
                 # Insertar el resultado en el text_widget
-                self.text_widget.insert(tk.END, "Inicio generacion de planillas diligenciadas y certificaciones para el municipio de FACA\n .....\n")
+                self.text_widget.insert(tk.END, " Inicio generacion de certificaciones\n diligenciadas para el municipio de FACA\n .....\n")
+                self.text_widget.update_idletasks() 
+
+                # Ejecutar la función en un hilo separado 
+                hilo = threading.Thread(target=self.ejecutar_generador_certificaciones, daemon=True)
+                hilo.start()
+
+            elif resultado == 0:
+                print("Proceso cancelado")
+            else:
+                print("No se realizó ninguna selección")
+
+            
+        except Exception as e:
+            # Insertar el error en el text_widget
+            self.text_widget.after(0, self.text_widget.insert, tk.END, f" Error al ejecutar el proceso\n{e}\n\n")
+    
+    def action4(self):
+        try:
+            # Crear la ventana adicional y esperar a que se cierre
+            ventana_adicional = VentanaAdicional(self.panel_principal)  # Asegúrate de pasar la ventana principal correcta
+            self.panel_principal.wait_window(ventana_adicional.ventana)  # Esperar a que la ventana adicional se cierre
+
+            # Obtener el resultado de la ventana adicional
+            resultado = ventana_adicional.obtener_resultado()  
+
+            # Usar el resultado
+            if resultado == 1:
+                
+                # Actualizar el archivo JSON
+                ActualizarJson().ejecutar("municipio_proceso", "FACA") 
+
+                # Insertar el resultado en el text_widget
+                self.text_widget.insert(tk.END, " Inicio proceso de convertir\n exceles a formato pdf ej el municipio de FACA\n .....\n")
                 self.text_widget.update_idletasks() 
 
                 # Ejecutar la función en un hilo separado

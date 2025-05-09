@@ -4,7 +4,6 @@ from xlsxwriter.utility import xl_rowcol_to_cell, xl_cell_to_rowcol
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as ExcelImage  # Renombramos Image para evitar conflicto con PIL
 from PIL import Image as PILImage  # Renombramos también Image de PIL
-from datetime import datetime
 import pandas as pd
 import xlsxwriter
 import pathlib
@@ -333,7 +332,7 @@ class GeneradorCertificaciones:
 
         # Definir la fila inicial
         fila_inicio = 25  
-        salto_filas = 3  # Cantidad de filas a combinar en cada iteración
+        salto_filas = 5  # Cantidad de filas a combinar en cada iteración
 
         # Iterar sobre cada fila del DataFrame filtrado
         for _, row in df_filtrado.iterrows():
@@ -355,9 +354,10 @@ class GeneradorCertificaciones:
                                 }))
 
             # Escribir valores en la columna B
-            worksheet.write(f'B{fila_inicio}', 'RPS', formato_celda_unicos_simple)
-            worksheet.write(f'B{fila_inicio + 1}', 'RI', formato_celda_unicos_simple)
-            worksheet.write(f'B{fila_inicio + 2}', 'CCT', formato_celda_unicos_simple)
+            worksheet.write(f'B{fila_inicio}', 'RPS-JU', formato_celda_unicos_simple)
+            worksheet.write(f'B{fila_inicio + 1}', 'RPS-AM/PM', formato_celda_unicos_simple)
+            worksheet.write(f'B{fila_inicio + 2}', 'RI', formato_celda_unicos_simple)
+            worksheet.write(f'B{fila_inicio + 3}', 'CCT AM-PM', formato_celda_unicos_simple)
 
             # =========================================================
             # Logica escritura novedad
@@ -518,7 +518,7 @@ class GeneradorCertificaciones:
                 df_resultado_final = df_novedades_filtro
 
                 # Definir las filas donde se deben escribir los valores
-                filas_racion = {"RPS": fila_inicio, "RI": fila_inicio + 1, "CCT": fila_inicio + 2}
+                filas_racion = {"RPS-JU": fila_inicio, "RPS-AM/PM": fila_inicio + 1, "RI": fila_inicio + 2, "CCT AM-PM": fila_inicio + 3}
 
                 # Escribir los valores en la hoja de Excel
                 for tipo_racion, fila in filas_racion.items():
@@ -558,6 +558,83 @@ class GeneradorCertificaciones:
                 # Leer insumo novedades
                 df_novedades = pd.read_excel(self.ruta_archivo_novedades, sheet_name="Novedades")
 
+                # ==========================================================================
+                # Logica para cantidad de raciones maximas por dia por novedad aplicada
+                # ==========================================================================
+
+                df_novedades_filtro = df_novedades[
+                    (df_novedades["SEDE"] == texto_sede) &
+                    (df_novedades["TIPO_NOVEDAD"] == "Cambio de complemento")
+                ]
+
+                df_filtrado = df_focalizacion[
+                    (df_focalizacion["SEDE"] == texto_sede)
+                ]
+
+                # Verificar si la columna de referencia (ejemplo: FECHA_NACIMIENTO) existe
+                if "FECHA_NACIMIENTO" in df_filtrado.columns:
+                    idx_fecha_nacimiento = df_filtrado.columns.get_loc("FECHA_NACIMIENTO")
+                    
+                    # Obtener las columnas que vienen después de FECHA_NACIMIENTO
+                    columnas_despues = df_filtrado.columns[idx_fecha_nacimiento + 1:].tolist()
+
+                    # Agregar las columnas "JORNADA" y "GRADO_COD" a la lista de columnas a seleccionar
+                    columnas_seleccionadas = ["JORNADA", "GRADO_COD"] + columnas_despues
+
+                    # Filtrar solo las columnas necesarias
+                    df_filtrado = df_filtrado[columnas_seleccionadas]
+
+                    # Convertir "X" en 1 y el resto en 0 en las columnas después de "FECHA_NACIMIENTO"
+                    df_filtrado[columnas_despues] = df_filtrado[columnas_despues].applymap(lambda x: 1 if x == "X" else 0)
+
+                    # Agrupar por JORNADA y GRADO_COD, sumando las apariciones de "X"
+                    df_conteo_X = df_filtrado.groupby(["JORNADA", "GRADO_COD"])[columnas_despues].sum().reset_index()
+
+                    # Convertir a formato largo para mejor visualización
+                    df_conteo_X_melt = df_conteo_X.melt(
+                        id_vars=["JORNADA", "GRADO_COD"],
+                        var_name="Columna",
+                        value_name="Conteo_X"
+                        )
+
+                    # Convertir la columna "FECHA" a tipo datetime en df_novedades_filtro
+                    df_novedades_filtro["FECHA"] = pd.to_datetime(df_novedades_filtro["FECHA"], errors='coerce')
+
+                    # Extraer el número del día de la fecha
+                    df_novedades_filtro["DIA_FECHA"] = df_novedades_filtro["FECHA"].dt.day.astype(str)  # Convertir a string para comparar con "Columna"
+
+                    # Convertir a string y limpiar espacios en df_novedades_filtro
+                    df_novedades_filtro["JORNADA"] = df_novedades_filtro["JORNADA"].astype(str).str.strip()
+                    df_novedades_filtro["GRADO_COD"] = df_novedades_filtro["GRADO_COD"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+                    df_novedades_filtro["DIA_FECHA"] = df_novedades_filtro["DIA_FECHA"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+
+                    # Convertir a string y limpiar espacios en df_conteo_X_melt
+                    df_conteo_X_melt["JORNADA"] = df_conteo_X_melt["JORNADA"].astype(str).str.strip()
+                    df_conteo_X_melt["GRADO_COD"] = df_conteo_X_melt["GRADO_COD"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+                    df_conteo_X_melt["Columna"] = df_conteo_X_melt["Columna"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+
+                    # Realizar el merge asegurando la coincidencia correcta de los tres campos
+                    df_resultado_complemento = df_conteo_X_melt.merge(
+                        df_novedades_filtro[["JORNADA", "GRADO_COD", "DIA_FECHA", "DETALLE"]],
+                        left_on=["JORNADA", "GRADO_COD", "Columna"],
+                        right_on=["JORNADA", "GRADO_COD", "DIA_FECHA"],
+                        how="inner"
+                    )
+
+                    # Eliminar la columna "DIA_FECHA" si ya no es necesaria
+                    df_resultado_complemento.drop(columns=["DIA_FECHA"], inplace=True)
+
+                    # Agrupar por "DETALLE" y sumar "Conteo_X"
+                    df_resultado_complemento = df_resultado_complemento.groupby("DETALLE", as_index=False).agg({
+                        "Conteo_X": "sum"
+                    })
+
+                    # Renombrar las columnas
+                    df_resultado_complemento.rename(columns={"DETALLE": "TIPO DE RACIÓN", "Conteo_X": "MAXIMO_RACIONES"}, inplace=True)
+
+                # =============================================================================
+                # Logica para cantidad de raciones maximas por dia por novedad aumento raciones
+                # =============================================================================
                 df_novedades_filtro = df_novedades[
                     (df_novedades["SEDE"] == texto_sede) &
                     (df_novedades["TIPO_NOVEDAD"] == "Aumento raciones")
@@ -589,19 +666,40 @@ class GeneradorCertificaciones:
                     # Concatenar ambos DataFrames
                     df_concatenado = pd.concat([df_resultado, df_novedades_filtro], ignore_index=True)
 
+                    # Normalizar los valores reemplazando '-' y '/' por espacios
+                    df_concatenado["TIPO DE RACIÓN"] = df_concatenado["TIPO DE RACIÓN"].str.replace(r"[-/]", " ", regex=True)
+
                     # Agrupar por "TIPO DE RACIÓN" y sumar "MAXIMO_RACIONES"
                     df_resultado_final = df_concatenado.groupby("TIPO DE RACIÓN", as_index=False)["MAXIMO_RACIONES"].sum()
 
                     # Agrupar por "TIPO DE RACIÓN" y sumar "MAXIMO_RACIONES"
                     df_resultado_final = df_resultado_final.groupby("TIPO DE RACIÓN", as_index=False)["MAXIMO_RACIONES"].sum()  
+
+                    # Normalizar los valores reemplazando '-' y '/' por espacios
+                    df_resultado_final["TIPO DE RACIÓN"] = df_resultado_final["TIPO DE RACIÓN"].str.replace(r"[-/]", " ", regex=True)
                 else:
-                    df_resultado_final = df_resultado
+                    # Verificar si los DataFrames están vacíos antes de concatenar
+                    if df_resultado.empty and df_resultado_complemento.empty:
+                        df_resultado_final = pd.DataFrame(columns=["TIPO DE RACIÓN", "MAXIMO_RACIONES"])  # DataFrame vacío con las columnas esperadas
+                    elif df_resultado.empty:
+                        df_resultado_final = df_resultado_complemento.copy()
+                    elif df_resultado_complemento.empty:
+                        df_resultado_final = df_resultado.copy()
+                    else:
+                        df_resultado_final = pd.concat([df_resultado, df_resultado_complemento], ignore_index=True)
+
+                    # df_resultado_final = df_resultado
+
+                    # Normalizar los valores reemplazando '-' y '/' por espacios
+                    df_resultado_final["TIPO DE RACIÓN"] = df_resultado_final["TIPO DE RACIÓN"].str.replace(r"[-/]", " ", regex=True)
             
                 # Definir las filas donde se deben escribir los valores
-                filas_racion = {"RPS": fila_inicio, "RI": fila_inicio + 1, "CCT": fila_inicio + 2}
+                filas_racion = {"RPS-JU": fila_inicio, "RPS-AM/PM": fila_inicio + 1, "RI": fila_inicio + 2, "CCT AM-PM": fila_inicio + 3}
 
                 # Escribir los valores en la hoja de Excel
                 for tipo_racion, fila in filas_racion.items():
+                    # Normalizar los valores reemplazando '-' y '/' por espacios
+                    tipo_racion = tipo_racion.replace("-", " ").replace("/", " ")
                     maximo_raciones = df_resultado_final.loc[df_resultado_final["TIPO DE RACIÓN"] == tipo_racion, "MAXIMO_RACIONES"]
                     
                     if not maximo_raciones.empty and maximo_raciones.values[0] > 0:
@@ -631,6 +729,35 @@ class GeneradorCertificaciones:
 
                 # Leer insumo novedades
                 df_novedades = pd.read_excel(self.ruta_archivo_novedades, sheet_name="Novedades")
+
+                # ==============================================================
+                # Determinar dias atentididos de la novedad "Cambio complemento"
+                # ==============================================================
+
+                df_novedades_filtro = df_novedades[
+                    (df_novedades["SEDE"] == texto_sede) &
+                    (df_novedades["TIPO_NOVEDAD"] == "Cambio de complemento")
+                ]
+
+                # Crear un DataFrame vacío para almacenar los resultados
+                df_resultado = pd.DataFrame(columns=["TIPO DE RACIÓN", "DIAS_RACION"])
+
+                # Verifica si el DataFrame no está vacío
+                if not df_novedades_filtro.empty: 
+                    # Crear una copia explícita para evitar el warning
+                    df_novedades_filtro = df_novedades_filtro.copy()
+
+                    # Extraer el número del día de la columna "FECHA"
+                    df_novedades_filtro["DIAS_RACION"] = df_novedades_filtro["FECHA"].dt.day.astype(str)
+
+                    # Agrupar por "DETALLE" (renombrado como "TIPO DE RACIÓN") y contar los días únicos en "DIAS_RACION"
+                    df_resultado = df_novedades_filtro.groupby("DETALLE", as_index=False)["DIAS_RACION"].nunique()
+
+                    # Renombrar columnas
+                    df_resultado.rename(columns={"DETALLE": "TIPO DE RACIÓN", "DIAS_RACION": "DIAS_RACION"}, inplace=True)
+                # ==============================================================
+                # Determinar dias atentididos de la novedad "Aumento raciones"
+                # ==============================================================
 
                 df_novedades_filtro = df_novedades[
                     (df_novedades["SEDE"] == texto_sede) &
@@ -665,14 +792,40 @@ class GeneradorCertificaciones:
 
                     # Agrupar por "TIPO DE RACIÓN" y obtener el valor máximo de "DIAS_RACION"
                     df_resultado_final = df_concatenado.groupby("TIPO DE RACIÓN", as_index=False)["DIAS_RACION"].max()
+
+                    # Normalizar los valores reemplazando '-' y '/' por espacios
+                    df_resultado_final["TIPO DE RACIÓN"] = df_resultado_final["TIPO DE RACIÓN"].str.replace(r"[-/]", " ", regex=True)
                 else:
-                    df_resultado_final = df_dias_racion
+                    # Verificar si los DataFrames están vacíos antes de concatenar
+                    if df_resultado.empty and df_dias_racion.empty:
+                        df_resultado_final = pd.DataFrame(columns=["TIPO DE RACIÓN", "DIAS_RACION"])  # DataFrame vacío con las columnas esperadas
+                    elif df_resultado.empty:
+                        df_resultado_final = df_dias_racion.copy()
+                    elif df_dias_racion.empty:
+                        df_resultado_final = df_resultado.copy()
+                    else:
+                        # Asegurar que ambas columnas existen en los DataFrames
+                        if "DIAS_RACION" in df_resultado.columns and "DIAS_RACION" in df_dias_racion.columns:
+                            # Restar los valores de la columna "DIAS_RACION"
+                            df_dias_racion = df_dias_racion.copy()  # Copia para evitar modificar el original
+                            df_dias_racion["DIAS_RACION"] = df_dias_racion["DIAS_RACION"] - df_resultado["DIAS_RACION"]
+                        
+                        # Concatenar los DataFrames después de la resta
+                        df_resultado_final = pd.concat([df_resultado, df_dias_racion], ignore_index=True)
+
+                    # df_resultado_final = df_dias_racion
+
+                    # Normalizar los valores reemplazando '-' y '/' por espacios
+                    df_resultado_final["TIPO DE RACIÓN"] = df_resultado_final["TIPO DE RACIÓN"].str.replace(r"[-/]", " ", regex=True)
             
                 # Definir las filas donde se deben escribir los valores
-                filas_racion = {"RPS": fila_inicio, "RI": fila_inicio + 1, "CCT": fila_inicio + 2}
+                filas_racion = {"RPS-JU": fila_inicio, "RPS-AM/PM": fila_inicio + 1, "RI": fila_inicio + 2, "CCT AM-PM": fila_inicio + 3}
 
                 # Escribir los valores en la hoja de Excel
                 for tipo_racion, fila in filas_racion.items():
+                    # Normalizar los valores reemplazando '-' y '/' por espacios
+                    tipo_racion = tipo_racion.replace("-", " ").replace("/", " ")
+
                     maximo_raciones = df_resultado_final.loc[df_resultado_final["TIPO DE RACIÓN"] == tipo_racion, "DIAS_RACION"]
                     
                     if not maximo_raciones.empty and maximo_raciones.values[0] > 0:
@@ -705,31 +858,31 @@ class GeneradorCertificaciones:
             'border': 1
         })
 
-        worksheet.write(f'C{fila_inicio}', f'=SUM(C25:C{fila_inicio - 1})', formato_celda_unicos_simple)
-        worksheet.write(f'D{fila_inicio}', f'=SUM(D25:D{fila_inicio - 1})', formato_celda_unicos_simple)
+        # worksheet.write(f'C{fila_inicio}', f'=SUM(C25:C{fila_inicio - 1})', formato_celda_unicos_simple)
+        # worksheet.write(f'D{fila_inicio}', f'=SUM(D25:D{fila_inicio - 1})', formato_celda_unicos_simple)
         worksheet.write(f'E{fila_inicio}', f'=SUM(E25:E{fila_inicio - 1})', formato_celda_unicos_simple)
 
         # Construir el rango dinámico
-        rango_celdas = f'A{fila_inicio}:B{fila_inicio}' 
+        # rango_celdas = f'A{fila_inicio}:B{fila_inicio}' 
 
-        # Combinar las celdas y escribir el texto
-        worksheet.merge_range(rango_celdas, "TOTAL", 
-                            workbook.add_format({
-                                'bold': True,
-                                'align': 'left',
-                                'valign': 'vcenter',
-                                'font_name': 'Aptos Narrow',
-                                'font_size': 12,
-                                'text_wrap': True,
-                                'border': 1
-                            }))
+        # # Combinar las celdas y escribir el texto
+        # worksheet.merge_range(rango_celdas, "TOTAL", 
+        #                     workbook.add_format({
+        #                         'bold': True,
+        #                         'align': 'left',
+        #                         'valign': 'vcenter',
+        #                         'font_name': 'Aptos Narrow',
+        #                         'font_size': 12,
+        #                         'text_wrap': True,
+        #                         'border': 1
+        #                     }))
         
         # =========================================================
         # Construir el rango dinámico
         rango_celdas = f'A{fila_inicio + 1}:H{fila_inicio + 1}' 
 
         # Combinar las celdas y escribir el texto
-        worksheet.merge_range(rango_celdas, "RPS = Ración Preparada en Sitio\nRI: Ración Industrializada\nCCT: Comida Caliente Transporta", 
+        worksheet.merge_range(rango_celdas, "AM -PM= Complemento alimentario jornada mañana / complemento alimentario jornada tarde\nJU= Jornada unica\nRI: Ración Industrializada\nCCT: Comida Caliente Transporta", 
                             workbook.add_format({
                                 'align': 'left',
                                 'valign': 'vcenter',
@@ -740,7 +893,7 @@ class GeneradorCertificaciones:
                             }))
         
         # Altura de la fila
-        worksheet.set_row(fila_inicio, 45)  # Fila 15 (índice 14 en Python)
+        worksheet.set_row(fila_inicio, 78)  # Fila 15 (índice 14 en Python)
 
         # Definir formato para las celdas individuales
         cell_format = workbook.add_format({
@@ -755,20 +908,17 @@ class GeneradorCertificaciones:
         })
 
         # Definir las celdas y sus respectivos textos
-        celdas_textos = {
-            f'A{fila_inicio + 3}': 'DESCRPCIÓN',
-            f'B{fila_inicio + 3}': 'TOTAL RACIONES ENTREGADAS RACIÓN PREPARADA EN SITIO',
-            f'C{fila_inicio + 3}': 'TOTAL RACIONES ENTREGADAS RACIÓN INDUSTRIALIZADA',
-            f'D{fila_inicio + 3}': 'TOTAL RACIONES ENTREGADAS COMIDA CALIENTE TRANSPORTADA',
-            f'E{fila_inicio + 3}': 'No. DE TITULARES DE DERECHO',
-        }
+        # celdas_textos = {
+        #     f'A{fila_inicio + 3}': 'DESCRPCIÓN',
+        #     f'B{fila_inicio + 3}': 'TOTAL RACIONES ENTREGADAS RACIÓN PREPARADA EN SITIO',
+        #     f'C{fila_inicio + 3}': 'TOTAL RACIONES ENTREGADAS RACIÓN INDUSTRIALIZADA',
+        #     f'D{fila_inicio + 3}': 'TOTAL RACIONES ENTREGADAS COMIDA CALIENTE TRANSPORTADA',
+        #     f'E{fila_inicio + 3}': 'No. DE TITULARES DE DERECHO',
+        # }
 
-        # Aplicar formato y texto a cada celda individualmente
-        for celda, texto in celdas_textos.items():
-            worksheet.write(celda, texto, cell_format)
-
-        # Definir altura de fila
-        worksheet.set_row(fila_inicio + 3, 67)  # Fila 16 (índice 15 en Python)
+        # # Aplicar formato y texto a cada celda individualmente
+        # for celda, texto in celdas_textos.items():
+        #     worksheet.write(celda, texto, cell_format)
 
         # =========================================================
 
@@ -780,25 +930,6 @@ class GeneradorCertificaciones:
             'font_size': 12,
             'border': 1
         })
-
-        worksheet.write(f'A{fila_inicio + 4}', 'POBLACIÓN MAYORITARIA', formato_celda_unicos)
-
-        worksheet.write(f'B{fila_inicio + 4}', f'=SUMIF(B25:B{fila_inicio - 1},"RPS",E25:E{fila_inicio - 1})', formato_celda_unicos_simple)
-        worksheet.write(f'C{fila_inicio + 4}', f'=SUMIF(B25:B{fila_inicio - 1},"RI",E25:E{fila_inicio - 1})', formato_celda_unicos_simple)
-        worksheet.write(f'D{fila_inicio + 4}', f'=SUMIF(B25:B{fila_inicio - 1},"CCT",E25:E{fila_inicio - 1})', formato_celda_unicos_simple)
-        worksheet.write(f'E{fila_inicio + 4}', f'=C{fila_inicio}', formato_celda_unicos_simple)
-
-
-        worksheet.write(f'A{fila_inicio + 5}', 'GRAN TOTAL', formato_celda_unicos)
-
-        worksheet.write(f'B{fila_inicio + 5}', f'=B{fila_inicio + 4}', formato_celda_unicos_simple)
-        worksheet.write(f'C{fila_inicio + 5}', f'=C{fila_inicio + 4}', formato_celda_unicos_simple)
-        worksheet.write(f'D{fila_inicio + 5}', f'=D{fila_inicio + 4}', formato_celda_unicos_simple)
-        worksheet.write(f'E{fila_inicio + 5}', f'=E{fila_inicio + 4}', formato_celda_unicos_simple)
-
-        # Definir altura de filas
-        worksheet.set_row(fila_inicio + 4, 33.8)  # Fila 17 (índice 16 en Python)
-        worksheet.set_row(fila_inicio + 5, 33.8)  # Fila 18 (índice 17 en Python)
 
         # =========================================================
         # Construir el rango dinámico
@@ -825,7 +956,7 @@ class GeneradorCertificaciones:
                                 'text_wrap': True,
                                 'border': 1
                             }))
-        
+
         # Construir el rango dinámico
         rango_celdas = f'A{fila_inicio + 17}:H{fila_inicio + 17}' 
 
@@ -876,8 +1007,15 @@ class GeneradorCertificaciones:
         # Construir el rango dinámico
         rango_celdas = f'A{fila_inicio + 20}:H{fila_inicio + 23}' 
 
-        # Combinar celdas rango_celdas
-        worksheet.merge_range(rango_celdas, '')
+        # Definir un formato con bordes
+        formato_borde = workbook.add_format({
+            'border': 1,  # Aplica bordes a todas las celdas
+            'align': 'center',
+            'valign': 'vcenter'
+        })
+
+        # Combinar celdas y aplicar el formato con bordes
+        worksheet.merge_range(rango_celdas, '', formato_borde)
 
         worksheet.write(f'A{fila_inicio + 24}', 'NOMBRES Y APELLIDOS DEL RECTOR', formato_celda_unicos)
 
@@ -971,7 +1109,7 @@ class GeneradorCertificaciones:
         # Guardar el archivo con las modificaciones
         writer.close()
 
-    def separar_dataframes(self):
+    def procesar_certificaciones_por_institucion(self):
 
         # Cargar el archivo de Excel
         df_focalizacion = pd.read_excel(self.ruta_archivo_aplicacion_novedades, dtype={"DANE": str})
@@ -988,12 +1126,22 @@ class GeneradorCertificaciones:
             var_institucion = df_grupo['INSTITUCION'].iloc[0]  # Tomar el primer valor de 'INSTITUCION'
             var_dane_institucion = df_grupo['DANE'].iloc[0]
 
+            # Condicional para pruebas 
+            # if var_institucion == "I.E.M. JUAN XXIII TÉCNICA EN ADMINISTRACIÓN AGROPECUARIA Y PROCESOS INDUSTRIALES":
+
             # Generar la certificación
             self.generar_certificacion(var_institucion, var_dane_institucion)
 
     def main(self):
-        print("\nINICIA PROCESO DE GENERACION DE CERTIFICACIONES\n")
-        self.separar_dataframes()
+        try:
+            print("\nINICIA PROCESO DE GENERACION DE CERTIFICACIONES\n")
+            self.procesar_certificaciones_por_institucion()
+
+            return " Proceso finalizado con éxito."
+        except Exception as e:
+            # En caso de error, devolver un mensaje de error
+            return f" Error en el proceso: {e}"
+        
 
 if __name__ == "__main__":
     generador = GeneradorCertificaciones()
